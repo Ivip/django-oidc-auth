@@ -14,6 +14,12 @@ class InvalidIdToken(OpenIDConnectError, ValueError):
     message = 'id_token MUST be signed'
 
 
+class TokenValidationError(OpenIDConnectError, ValueError):
+    def __init__(self, name):
+        message = 'Token validation %s failed' % name
+        super(TokenValidationError, self).__init__(message)
+
+
 class UnsuppportedSigningMethod(OpenIDConnectError, ValueError):
     def __init__(self, unsupported_method, supported_methods):
         message = 'Signing method %s not supported, options are (%s)' % (

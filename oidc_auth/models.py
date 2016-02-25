@@ -22,11 +22,10 @@ class Nonce(models.Model):
         return '%s' % self.state
 
     def __init__(self, *args, **kwargs):
-        self._provider = None
         super(Nonce, self).__init__(*args, **kwargs)
 
     @classmethod
-    def generate(cls, redirect_url, issuer, length=oidc_settings.NONCE_LENGTH):
+    def generate(cls, redirect_url, issuer_url, length=oidc_settings.NONCE_LENGTH):
         """This method generates and returns a nonce, an unique generated
         string. If the maximum of retries is exceeded, it returns None.
         """
@@ -37,26 +36,25 @@ class Nonce(models.Model):
 
             try:
                 log.debug('Attempt %s to save nonce %s to issuer %s' % (i+1,
-                    _hash, issuer))
-                return cls.objects.create(issuer_url=issuer, state=_hash,
+                    _hash, issuer_url))
+                nonce = cls.objects.create(issuer_url=issuer_url, state=_hash,
                         redirect_url=redirect_url)
+                return nonce.state
             except IntegrityError:
                 pass
 
-        log.debug('Maximum of retries to create a nonce to issuer %s '
-                  'exceeded! Max: 5' % issuer)
+        log.error('Maximum of retries to create a nonce to issuer %s '
+                  'exceeded! Max: 5' % issuer_url)
+        return None
 
-    @property
-    def provider(self):
-        """This method will fetch the related provider from the database
-        and cache it inside an object var.
+    @classmethod
+    def validate(cls, state):
+        """This method validates nonce and returns encoded data dictionary
         """
-        provider = self._provider
-
-        if not provider:
-            provider = OpenIDProvider.objects.get(issuer=self.issuer_url)
-
-        return provider
+        try:
+            return cls.objects.get(state=state)
+        except cls.DoesNotExist:
+            return None
 
 
 class OpenIDProvider(models.Model):

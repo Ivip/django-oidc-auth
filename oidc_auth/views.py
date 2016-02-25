@@ -8,10 +8,10 @@ import requests
 
 from . import errors
 from . import utils
-from .utils import log
+from .utils import log, import_from_str
 from .settings import oidc_settings
 from .forms import OpenIDConnectForm
-from .models import OpenIDProvider, get_default_provider, Nonce
+from .models import OpenIDProvider, get_default_provider
 
 
 def login_begin(request, template_name='oidc/login.html',
@@ -38,8 +38,10 @@ def _redirect(request, login_complete_view, form_class, redirect_field_name):
         provider = OpenIDProvider.discover(issuer=form.cleaned_data['issuer'])
 
     redirect_url = request.GET.get(redirect_field_name, settings.LOGIN_REDIRECT_URL)
-    nonce = Nonce.generate(redirect_url, provider.issuer)
-    request.session['oidc_state'] = nonce.state
+
+    Nonce = import_from_str(oidc_settings.STATE_KEEPER)
+    state = Nonce.generate(redirect_url, provider.issuer)
+    request.session['oidc_state'] = state
 
     redirect_url = oidc_settings.COMPLETE_URL
     if redirect_url is None:
@@ -50,7 +52,7 @@ def _redirect(request, login_complete_view, form_class, redirect_field_name):
         'scope': utils.scopes(),
         'redirect_uri': request.build_absolute_uri(redirect_url),
         'client_id': provider.client_id,
-        'state': nonce.state
+        'state': state
     })
     redirect_url = '%s?%s' % (provider.authorization_endpoint, params)
 
@@ -75,8 +77,12 @@ def login_complete(request, login_complete_view='oidc-complete',
     if request.GET['state'] != request.session['oidc_state']:
         raise errors.ForbiddenAuthRequest()
 
-    nonce = Nonce.objects.get(state=request.GET['state'])
-    provider = nonce.provider
+    Nonce = import_from_str(oidc_settings.STATE_KEEPER)
+    nonce = Nonce.validate(request.GET['state'])
+    if nonce is None:
+        raise errors.ForbiddenAuthRequest()
+
+    provider = OpenIDProvider.objects.get(issuer=nonce.issuer_url)
     log.debug('Login started from provider %s' % provider)
 
     redirect_url = oidc_settings.COMPLETE_URL

@@ -31,10 +31,14 @@ class OpenIDConnectBackend(object):
             provider = credentials['provider']
             id_token = provider.verify_id_token(credentials['id_token'])
 
+            if id_token['iss'] != provider.issuer:
+                log.error('ISS validation %s != %s', id_token['iss'], provider.issuer)
+                raise errors.TokenValidationError('id_token.iss')
+
             manager = self._get_user_manager()
             if manager:
                 access = OpenIDAccess(provider)
-                credentials['provider'] = provider.pk
+                credentials['provider'] = provider.issuer
                 credentials['id_token'] = id_token
                 return manager.get_user_by_token(credentials, access)
             return None
@@ -51,15 +55,10 @@ class OpenIDAccess(object):
         id_token = token['id_token']
         access_token = token['access_token']
 
-
-        if not self._provider or self._provider.pk != token['provider']:
-            self._provider = OpenIDProvider.objects.get(token['provider'])
-        """
         if not self._provider or self._provider.issuer != id_token['iss']:
             if self._provider:
                 log.error('Wrong saved provider: %s != %s', self._provider.issuer, id_token['iss'])
             self._provider = OpenIDProvider.objects.get(issuer=id_token['iss'])
-        """
 
         sub = id_token['sub']
         log.debug('Requesting userinfo in %s. sub: %s, access_token: %s' % (

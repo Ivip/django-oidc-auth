@@ -12,6 +12,7 @@ DEFAULTS = {
     'VERIFY_SSL': True,
     'COMPLETE_URL': None,
     'USER_MANAGER': None,
+    'STATE_KEEPER': '.models.Nonce'
 }
 
 USER_SETTINGS = getattr(settings, 'OIDC_AUTH', {})
