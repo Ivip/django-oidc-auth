@@ -1,6 +1,6 @@
 from urllib import urlencode
 from django.conf import settings
-from django.http import HttpResponseBadRequest
+from django.http import HttpResponseBadRequest, HttpResponse
 from django.contrib.auth import REDIRECT_FIELD_NAME, authenticate, login as django_login
 from django.core.urlresolvers import reverse
 from django.shortcuts import render, redirect
@@ -41,10 +41,14 @@ def _redirect(request, login_complete_view, form_class, redirect_field_name):
     nonce = Nonce.generate(redirect_url, provider.issuer)
     request.session['oidc_state'] = nonce.state
 
+    redirect_url = oidc_settings.COMPLETE_URL
+    if redirect_url is None:
+        redirect_url = reverse(login_complete_view)
+
     params = urlencode({
         'response_type': 'code',
         'scope': utils.scopes(),
-        # 'redirect_uri': request.build_absolute_uri(reverse(login_complete_view)),
+        'redirect_uri': request.build_absolute_uri(redirect_url),
         'client_id': provider.client_id,
         'state': nonce.state
     })
@@ -75,15 +79,19 @@ def login_complete(request, login_complete_view='oidc-complete',
     provider = nonce.provider
     log.debug('Login started from provider %s' % provider)
 
+    redirect_url = oidc_settings.COMPLETE_URL
+    if redirect_url is None:
+        redirect_url = reverse(login_complete_view)
+
     params = {
         'grant_type': 'authorization_code',
         'code': request.GET['code'],
-        'redirect_uri': request.build_absolute_uri(reverse(login_complete_view))
+        'redirect_uri': request.build_absolute_uri(redirect_url)
     }
 
     response = requests.post(provider.token_endpoint,
                              auth=provider.client_credentials,
-                             params=params, verify=oidc_settings.VERIFY_SSL)
+                             data=params, verify=oidc_settings.VERIFY_SSL)
 
     if response.status_code != 200:
         raise errors.RequestError(provider.token_endpoint, response.status_code)

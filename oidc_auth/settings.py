@@ -9,7 +9,9 @@ DEFAULTS = {
     'CLIENT_ID': None,
     'CLIENT_SECRET': None,
     'NONCE_LENGTH': 8,
-    'VERIFY_SSL': True
+    'VERIFY_SSL': True,
+    'COMPLETE_URL': None,
+    'USER_MANAGER': None,
 }
 
 USER_SETTINGS = getattr(settings, 'OIDC_AUTH', {})
@@ -41,6 +43,5 @@ class OIDCSettings(object):
         self.patched_settings = kwargs
         yield
         self.patched_settings = {}
-
 
 oidc_settings = OIDCSettings(USER_SETTINGS, DEFAULTS)

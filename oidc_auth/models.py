@@ -4,14 +4,13 @@ import json
 from urlparse import urljoin
 import requests
 from django.db import models, IntegrityError
-from django.conf import settings
 from jwkest.jwk import load_jwks_from_url
 from jwkest.jws import JWS
 from jwkest.jwk import SYMKey
 
 from . import errors
 from .settings import oidc_settings
-from .utils import log, b64decode, get_user_model
+from .utils import log, b64decode
 
 
 class Nonce(models.Model):
@@ -147,7 +146,7 @@ class OpenIDProvider(models.Model):
 
         id_token = JWS().verify_compact(token, self.signing_keys)
         log.debug('Token verified, %s' % id_token)
-        return json.loads(id_token)
+        return id_token
 
     @staticmethod
     def _get_issuer(token):
@@ -192,97 +191,3 @@ def get_default_provider():
         provider.save()
 
     return provider
-
-
-class OpenIDUser(models.Model):
-    sub = models.CharField(max_length=255, unique=True)
-    issuer = models.ForeignKey(OpenIDProvider)
-    user = models.OneToOneField(getattr(settings, 'AUTH_USER_MODEL', 'auth.User'),
-            related_name='oidc_account')
-
-    access_token = models.CharField(max_length=255)
-    refresh_token = models.CharField(max_length=255)
-
-    def __unicode__(self):
-        return '%s: %s' % (self.sub, self.user)
-
-    @classmethod
-    def get_or_create(cls, id_token, access_token, refresh_token, provider):
-        UserModel = get_user_model()
-
-        try:
-            oidc_acc = cls.objects.get(sub=id_token['sub'])
-
-            # Updating with new tokens
-            oidc_acc.access_token = access_token
-            oidc_acc.refresh_token = refresh_token
-            oidc_acc.save()
-
-            log.debug('OpenIDUser found, sub %s' % oidc_acc.sub)
-            return oidc_acc
-        except cls.DoesNotExist:
-            log.debug("OpenIDUser for sub %s not found, so it'll be created" % id_token['sub'])
-
-        # Find an existing User locally or create a new one
-        try:
-            user = UserModel.objects.get(username__iexact=id_token['sub'])
-            log.debug('Found user with username %s locally' % id_token['sub'])
-        except UserModel.MultipleObjectsReturned:
-            user = UserModel.objects.filter(username__iexact=id_token['sub'])[0]
-            log.warn('Multiple users found with username %s! First match will be selected' % id_token['sub'])
-        except UserModel.DoesNotExist:
-            log.debug('User with username %s not found locally, '
-                      'so it will be created' % id_token['sub'])
-
-            claims = cls._get_userinfo(provider, id_token['sub'],
-                    access_token, refresh_token)
-
-            user = UserModel()
-
-            user.username   = claims['preferred_username']
-            user.email      = claims['email']
-            user.first_name = claims['given_name']
-            user.last_name  = claims['family_name']
-            user.set_unusable_password()
-
-            user.save()
-
-        # Avoid duplicate user key
-        try:
-            oidc_acc = cls.objects.get(user=user)
-
-            oidc_acc.sub= id_token['sub']
-            oidc_acc.access_token = access_token
-            oidc_acc.refresh_token = refresh_token
-            oidc_acc.save()
-
-            log.debug('OpenIDUser found, sub %s' % oidc_acc.sub)
-            return oidc_acc
-        except cls.DoesNotExist:
-            log.debug("OpenIDUser for sub %s not found, so it'll be created" % id_token['sub'])
-
-        return cls.objects.create(sub=id_token['sub'], issuer=provider,
-                user=user, access_token=access_token, refresh_token=refresh_token)
-
-    @classmethod
-    def _get_userinfo(self, provider, sub, access_token, refresh_token):
-        # TODO encapsulate this?
-        log.debug('Requesting userinfo in %s. sub: %s, access_token: %s' % (
-            provider.userinfo_endpoint, sub, access_token))
-        response = requests.get(provider.userinfo_endpoint, headers={
-            'Authorization': 'Bearer %s' % access_token
-        }, verify=oidc_settings.VERIFY_SSL)
-
-        if response.status_code != 200:
-            raise errors.RequestError(provider.userinfo_endpoint, response.status_code)
-
-        claims = response.json()
-
-        if claims['sub'] != sub:
-            raise errors.InvalidUserInfo()
-
-        name = '%s %s' % (claims['given_name'], claims['family_name'])
-        log.debug('userinfo of sub: %s -> name: %s, preferred_username: %s, email: %s' % (sub,
-            name, claims['preferred_username'], claims['email']))
-
-        return claims
