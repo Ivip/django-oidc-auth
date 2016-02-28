@@ -42,5 +42,5 @@ class ForbiddenAuthRequest(OpenIDConnectError):
     message = 'querystring state differs from state saved on session'
 
 
-class MissingRedirectURL(OpenIDConnectError):
-    message = "Missing URL for oidc redirect (maybe DEFAULT_ENDPOINT's missing on settings?)"
+class InvalidIssuer(OpenIDConnectError):
+    message = "Missing or invalid OIDC provider URL"

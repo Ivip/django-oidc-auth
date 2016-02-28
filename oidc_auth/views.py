@@ -1,6 +1,6 @@
 from urllib import urlencode
 from django.conf import settings
-from django.http import HttpResponseBadRequest, HttpResponse
+from django.http import HttpResponseBadRequest, HttpResponse, HttpResponseNotAllowed
 from django.contrib.auth import REDIRECT_FIELD_NAME, authenticate, login as django_login
 from django.core.urlresolvers import reverse
 from django.shortcuts import render, redirect
@@ -30,18 +30,24 @@ def _redirect(request, login_complete_view, form_class, redirect_field_name):
     provider = get_default_provider()
 
     if not provider:
-        form = form_class(request.POST)
-
-        if not form.is_valid():
-            raise errors.MissingRedirectURL()
-
-        provider = OpenIDProvider.discover(issuer=form.cleaned_data['issuer'])
+        if request.method == 'POST':
+            form = form_class(request.POST)
+            if not form.is_valid():
+                return HttpResponseBadRequest('Invalid issuer')
+            provider = OpenIDProvider.discover(issuer=form.cleaned_data['iss'])
+        elif request.method == 'GET':
+            try:
+                iss = request.GET['iss']
+            except KeyError:
+                return HttpResponseBadRequest('Invalid issuer')
+            provider = OpenIDProvider.discover(issuer=iss)
+        else:
+            return HttpResponseNotAllowed(['POST', 'GET'])
 
     redirect_url = request.GET.get(redirect_field_name, settings.LOGIN_REDIRECT_URL)
 
     Nonce = import_from_str(oidc_settings.STATE_KEEPER)
-    state = Nonce.generate(redirect_url, provider.issuer)
-    request.session['oidc_state'] = state
+    state = Nonce.generate(request, request.session.session_key, redirect_url, provider.issuer)
 
     redirect_url = oidc_settings.COMPLETE_URL
     if redirect_url is None:
@@ -68,19 +74,15 @@ def login_complete(request, login_complete_view='oidc-complete',
             'error': request.GET['error']
         })
 
-    if 'oidc_state' not in request.session:
-        return redirect(settings.LOGIN_URL)
-
     if 'code' not in request.GET and 'state' not in request.GET:
         return HttpResponseBadRequest('Invalid request')
 
-    if request.GET['state'] != request.session['oidc_state']:
-        raise errors.ForbiddenAuthRequest()
+    state = request.GET['state']
 
     Nonce = import_from_str(oidc_settings.STATE_KEEPER)
-    nonce = Nonce.validate(request.GET['state'])
+    nonce = Nonce.validate(request, request.session.session_key, state)
     if nonce is None:
-        raise errors.ForbiddenAuthRequest()
+        return HttpResponseBadRequest('Invalid state')
 
     provider = OpenIDProvider.objects.get(issuer=nonce.issuer_url)
     log.debug('Login started from provider %s' % provider)
@@ -100,13 +102,17 @@ def login_complete(request, login_complete_view='oidc-complete',
                              data=params, verify=oidc_settings.VERIFY_SSL)
 
     if response.status_code != 200:
-        raise errors.RequestError(provider.token_endpoint, response.status_code)
+        return HttpResponseForbiddent('Invalid token')
 
     log.debug('Token exchange done, proceeding authentication')
     credentials = response.json()
     credentials['provider'] = provider
     user = authenticate(credentials=credentials)
     django_login(request, user)
+
+    if oidc_settings.LOGIN_COMPLETE:
+        hook = import_from_str(oidc_settings.LOGIN_COMPLETE)
+        return hook(request, state, nonce.redirect_url)
 
     return redirect(nonce.redirect_url)
 
@@ -119,4 +125,5 @@ def _redirect_to_provider(request):
     has_default_provider = oidc_settings.DEFAULT_PROVIDER
 
     return (not oidc_settings.DISABLE_OIDC
-            and (has_default_provider or request.method == 'POST'))
+            and (has_default_provider 
+                    or request.method == 'POST' or request.GET.get('iss')))

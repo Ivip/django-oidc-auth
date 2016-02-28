@@ -17,6 +17,8 @@ class Nonce(models.Model):
     issuer_url = models.URLField()
     state = models.CharField(max_length=255, unique=True)
     redirect_url = models.CharField(max_length=100)
+    session_id = models.CharField(max_length=128)
+    created = models.DateTimeField(auto_now_add=True)
 
     def __unicode__(self):
         return '%s' % self.state
@@ -24,35 +26,29 @@ class Nonce(models.Model):
     def __init__(self, *args, **kwargs):
         super(Nonce, self).__init__(*args, **kwargs)
 
-    @classmethod
-    def generate(cls, redirect_url, issuer_url, length=oidc_settings.NONCE_LENGTH):
-        """This method generates and returns a nonce, an unique generated
-        string. If the maximum of retries is exceeded, it returns None.
-        """
+    @staticmethod
+    def nonce(length=oidc_settings.NONCE_LENGTH):
+        """Generate nonce string"""
         CHARS = string.letters + string.digits
-
-        for i in range(5):
-            _hash = ''.join(random.choice(CHARS) for n in range(length))
-
-            try:
-                log.debug('Attempt %s to save nonce %s to issuer %s' % (i+1,
-                    _hash, issuer_url))
-                nonce = cls.objects.create(issuer_url=issuer_url, state=_hash,
-                        redirect_url=redirect_url)
-                return nonce.state
-            except IntegrityError:
-                pass
-
-        log.error('Maximum of retries to create a nonce to issuer %s '
-                  'exceeded! Max: 5' % issuer_url)
-        return None
+        return ''.join(random.choice(CHARS) for n in range(length))
 
     @classmethod
-    def validate(cls, state):
-        """This method validates nonce and returns encoded data dictionary
-        """
+    def generate(cls, request, session_id, redirect_url, issuer_url, nonce=None):
+        """Generate and return state string for specified session"""
+        state = nonce or cls.nonce()
         try:
-            return cls.objects.get(state=state)
+            cls.objects.create(issuer_url=issuer_url, state=state,
+                    session_id=session_id, redirect_url=redirect_url)
+            return state
+        except IntegrityError:
+            return None
+
+    @classmethod
+    def validate(cls, request, session_id, state):
+        """This method validates nonce for the session and returns
+            object with redirect_url and issuer or None"""
+        try:
+            return cls.objects.get(state=state, session_id=session_id)
         except cls.DoesNotExist:
             return None
 
@@ -95,6 +91,9 @@ class OpenIDProvider(models.Model):
             return provider
         except cls.DoesNotExist:
             pass
+
+        if oidc_settings.DISABLE_OIDC_DISCOVER:
+            raise errors.InvalidIssuer()
 
         log.debug('Provider %s not discovered yet, proceeding discovery' % issuer)
         discover_endpoint = urljoin(issuer, '.well-known/openid-configuration')

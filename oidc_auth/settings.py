@@ -4,15 +4,17 @@ from django.conf import settings
 
 DEFAULTS = {
     'DISABLE_OIDC': False,
+    'DISABLE_OIDC_DISCOVER': False,
     'DEFAULT_PROVIDER': {},
     'SCOPES': ('openid', 'given_name', 'family_name', 'preferred_username', 'email'),
     'CLIENT_ID': None,
     'CLIENT_SECRET': None,
-    'NONCE_LENGTH': 8,
+    'NONCE_LENGTH': 32,
     'VERIFY_SSL': True,
     'COMPLETE_URL': None,
     'USER_MANAGER': None,
-    'STATE_KEEPER': '.models.Nonce'
+    'STATE_KEEPER': '.models.Nonce',
+    'LOGIN_COMPLETE': None,
 }
 
 USER_SETTINGS = getattr(settings, 'OIDC_AUTH', {})
