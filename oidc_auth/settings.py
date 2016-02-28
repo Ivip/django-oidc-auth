@@ -9,7 +9,7 @@ DEFAULTS = {
     'SCOPES': ('openid', 'given_name', 'family_name', 'preferred_username', 'email'),
     'CLIENT_ID': None,
     'CLIENT_SECRET': None,
-    'NONCE_LENGTH': 32,
+    'NONCE_LENGTH': 28,
     'VERIFY_SSL': True,
     'COMPLETE_URL': None,
     'USER_MANAGER': None,
