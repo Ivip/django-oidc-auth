@@ -46,6 +46,9 @@ def _redirect(request, login_complete_view, form_class, redirect_field_name):
 
     redirect_url = request.GET.get(redirect_field_name, settings.LOGIN_REDIRECT_URL)
 
+    if not request.session.exists(request.session.session_key):
+        request.session.create()
+
     Nonce = import_from_str(oidc_settings.STATE_KEEPER)
     state = Nonce.generate(request, request.session.session_key, redirect_url, provider.issuer)
 
