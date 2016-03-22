@@ -1,6 +1,6 @@
 from urllib import urlencode
 from django.conf import settings
-from django.http import HttpResponseBadRequest, HttpResponse, HttpResponseNotAllowed
+from django.http import HttpResponseBadRequest, HttpResponse, HttpResponseNotAllowed, HttpResponseForbidden
 from django.contrib.auth import REDIRECT_FIELD_NAME, authenticate, login as django_login
 from django.core.urlresolvers import reverse
 from django.shortcuts import render, redirect
@@ -105,7 +105,7 @@ def login_complete(request, login_complete_view='oidc-complete',
                              data=params, verify=oidc_settings.VERIFY_SSL)
 
     if response.status_code != 200:
-        return HttpResponseForbiddent('Invalid token')
+        return HttpResponseForbidden('Invalid token')
 
     log.debug('Token exchange done, proceeding authentication')
     credentials = response.json()
