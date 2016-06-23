@@ -180,7 +180,7 @@ def get_default_provider():
               'userinfo_endpoint', 'client_id', 'client_secret']
 
     for field in fields:
-        if getattr(provider, field) != args[field]:
+        if field in args and getattr(provider, field) != args[field]:
             should_update = True
             setattr(provider, field, args[field])
 
