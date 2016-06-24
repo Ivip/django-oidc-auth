@@ -29,20 +29,23 @@ def login_begin(request, template_name='oidc/login.html',
 def _redirect(request, login_complete_view, form_class, redirect_field_name):
     provider = get_default_provider()
 
-    if not provider:
-        if request.method == 'POST':
-            form = form_class(request.POST)
-            if not form.is_valid():
+    if request.method == 'POST':
+        form = form_class(request.POST)
+        if not form.is_valid():
+            if not provider:
                 return HttpResponseBadRequest('Invalid issuer')
-            provider = OpenIDProvider.discover(issuer=form.cleaned_data['iss'])
-        elif request.method == 'GET':
-            try:
-                iss = request.GET['iss']
-            except KeyError:
-                return HttpResponseBadRequest('Invalid issuer')
-            provider = OpenIDProvider.discover(issuer=iss)
         else:
-            return HttpResponseNotAllowed(['POST', 'GET'])
+            provider = OpenIDProvider.discover(issuer=form.cleaned_data['iss'])
+    elif request.method == 'GET':
+        try:
+            iss = request.GET['iss']
+        except KeyError:
+            if not provider:
+                return HttpResponseBadRequest('Invalid issuer')
+        else:
+            provider = OpenIDProvider.discover(issuer=iss)
+    else:
+        return HttpResponseNotAllowed(['POST', 'GET'])
 
     redirect_url = request.GET.get(redirect_field_name, settings.LOGIN_REDIRECT_URL)
 
