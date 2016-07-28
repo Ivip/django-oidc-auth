@@ -114,6 +114,9 @@ def login_complete(request, login_complete_view='oidc-complete',
     credentials = response.json()
     credentials['provider'] = provider
     user = authenticate(credentials=credentials)
+    if user is None:
+        return HttpResponseForbidden('Invalid user credentials')
+
     django_login(request, user)
 
     if oidc_settings.LOGIN_COMPLETE:
