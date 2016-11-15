@@ -44,3 +44,7 @@ class ForbiddenAuthRequest(OpenIDConnectError):
 
 class InvalidIssuer(OpenIDConnectError):
     message = "Missing or invalid OIDC provider URL"
+
+
+class DataError(OpenIDConnectError, ValueError):
+    message = "Invalid data passed"

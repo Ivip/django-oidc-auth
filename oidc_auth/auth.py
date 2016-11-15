@@ -1,5 +1,3 @@
-from django.contrib.auth import get_user_model
-
 from .settings import oidc_settings
 from .utils import log, import_from_str
 from .models import OpenIDProvider
@@ -40,6 +38,8 @@ class OpenIDConnectBackend(object):
                 access = OpenIDAccess(provider)
                 credentials['provider'] = provider.issuer
                 credentials['id_token'] = id_token
+                if 'login_data' in kwargs:
+                    credentials['login_data'] = kwargs['login_data']
                 return manager.get_user_by_token(credentials, access)
             return None
         except Exception as e:

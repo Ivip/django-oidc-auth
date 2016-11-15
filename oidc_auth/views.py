@@ -1,6 +1,7 @@
 from urllib import urlencode
 from django.conf import settings
-from django.http import HttpResponseBadRequest, HttpResponse, HttpResponseNotAllowed, HttpResponseForbidden
+from django.http import HttpResponseBadRequest, HttpResponse, HttpResponseNotAllowed, HttpResponseForbidden,\
+    HttpResponseServerError
 from django.contrib.auth import REDIRECT_FIELD_NAME, authenticate, login as django_login
 from django.core.urlresolvers import reverse
 from django.shortcuts import render, redirect
@@ -20,32 +21,44 @@ def login_begin(request, template_name='oidc/login.html',
         redirect_field_name=REDIRECT_FIELD_NAME):
 
     if _redirect_to_provider(request):
-        return _redirect(request, login_complete_view, form_class, redirect_field_name)
+        issuer = None
+        if request.method == 'POST':
+            form = form_class(request.POST)
+            if form.is_valid():
+                issuer = form.cleaned_data['iss']
+
+        return _redirect(request, login_complete_view, issuer, redirect_field_name, None)
 
     log.debug('Rendering login template at %s' % template_name)
     return render(request, template_name)
 
 
-def _redirect(request, login_complete_view, form_class, redirect_field_name):
-    provider = get_default_provider()
+def login_initiate(request, 
+        login_complete_view='oidc-complete', 
+        issuer=None,
+        redirect_field_name=REDIRECT_FIELD_NAME,
+        login_data=None):
 
-    if request.method == 'POST':
-        form = form_class(request.POST)
-        if not form.is_valid():
-            if not provider:
-                return HttpResponseBadRequest('Invalid issuer')
-        else:
-            provider = OpenIDProvider.discover(issuer=form.cleaned_data['iss'])
-    elif request.method == 'GET':
-        try:
-            iss = request.GET['iss']
-        except KeyError:
-            if not provider:
-                return HttpResponseBadRequest('Invalid issuer')
-        else:
-            provider = OpenIDProvider.discover(issuer=iss)
-    else:
+    if oidc_settings.DISABLE_OIDC:
+        return HttpResponse("OIDC is disabled", status=503)
+
+    return _redirect(request, login_complete_view, issuer, redirect_field_name, login_data)
+
+
+def _redirect(request, login_complete_view, issuer, redirect_field_name, login_data):
+    if request.method not in ['POST', 'GET']:
         return HttpResponseNotAllowed(['POST', 'GET'])
+
+    if issuer:
+        try:
+            provider = OpenIDProvider.discover(issuer=issuer)
+        except errors.InvalidIssuer:
+            provider = None
+    else:
+        provider = get_default_provider()
+
+    if not provider:
+        return HttpResponseBadRequest('Invalid issuer')
 
     redirect_url = request.GET.get(redirect_field_name, settings.LOGIN_REDIRECT_URL)
 
@@ -53,7 +66,15 @@ def _redirect(request, login_complete_view, form_class, redirect_field_name):
         request.session.create()
 
     Nonce = import_from_str(oidc_settings.STATE_KEEPER)
-    state = Nonce.generate(request, request.session.session_key, redirect_url, provider.issuer)
+    try:
+        state = Nonce.generate(request, request.session.session_key, redirect_url, provider.issuer, 
+            state_data=login_data)
+    except errors.DataError:
+        return HttpResponseBadRequest("Invalid data passed")
+    except Exception:
+        state = None
+    if state is None:
+        return HttpResponseServerError("Cannot create login state")
 
     redirect_url = oidc_settings.COMPLETE_URL
     if redirect_url is None:
@@ -113,7 +134,10 @@ def login_complete(request, login_complete_view='oidc-complete',
     log.debug('Token exchange done, proceeding authentication')
     credentials = response.json()
     credentials['provider'] = provider
-    user = authenticate(credentials=credentials)
+    extra = {'session_key': request.session.session_key}
+    if nonce.state_data is not None:
+        extra['login_data'] = nonce.state_data
+    user = authenticate(credentials=credentials, **extra)
     if user is None:
         return HttpResponseForbidden('Invalid user credentials')
 
@@ -135,4 +159,4 @@ def _redirect_to_provider(request):
 
     return (not oidc_settings.DISABLE_OIDC
             and (has_default_provider 
-                    or request.method == 'POST' or request.GET.get('iss')))
+                    or request.method == 'POST'))

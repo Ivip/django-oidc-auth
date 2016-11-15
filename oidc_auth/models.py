@@ -1,9 +1,9 @@
 import string
 import random
-import json
 from urlparse import urljoin
 import requests
 from django.db import models, IntegrityError
+from django.core.exceptions import ValidationError
 from jwkest.jwk import load_jwks_from_url
 from jwkest.jws import JWS
 from jwkest.jwk import SYMKey
@@ -19,6 +19,7 @@ class Nonce(models.Model):
     redirect_url = models.CharField(max_length=100)
     session_id = models.CharField(max_length=128)
     created = models.DateTimeField(auto_now_add=True)
+    state_data = models.CharField(max_length=255, null=True, blank=True)
 
     def __unicode__(self):
         return '%s' % self.state
@@ -33,13 +34,18 @@ class Nonce(models.Model):
         return ''.join(random.choice(CHARS) for n in range(length))
 
     @classmethod
-    def generate(cls, request, session_id, redirect_url, issuer_url, nonce=None):
+    def generate(cls, request, session_id, redirect_url, issuer_url, nonce=None, state_data=None):
         """Generate and return state string for specified session"""
         state = nonce or cls.nonce()
         try:
-            cls.objects.create(issuer_url=issuer_url, state=state,
-                    session_id=session_id, redirect_url=redirect_url)
+            obj = cls(issuer_url=issuer_url, state=state,
+                    session_id=session_id, redirect_url=redirect_url, state_data=state_data)
+            """Validate size constraints because DB may silently trim values"""
+            obj.clean_fields()
+            obj.save(force_insert=True)
             return state
+        except ValidationError as e:
+            raise errors.DataError(str(e))
         except IntegrityError:
             return None
 
