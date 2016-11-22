@@ -76,8 +76,6 @@ class OpenIDAccess(object):
         if claims['sub'] != sub:
             raise errors.InvalidUserInfo()
 
-        name = '%s %s' % (claims.get('given_name', ''), claims.get('family_name', ''))
-        log.debug('userinfo of sub: %s -> name: %s, preferred_username: %s, email: %s' % (sub,
-            name, claims.get('preferred_username', ''), claims.get('email')))
+        log.debug("get_userinfo sub %s claims %s" % (sub, claims.keys()))
 
         return claims

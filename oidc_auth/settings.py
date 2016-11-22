@@ -6,7 +6,7 @@ DEFAULTS = {
     'DISABLE_OIDC': False,
     'DISABLE_OIDC_DISCOVER': False,
     'DEFAULT_PROVIDER': {},
-    'SCOPES': ('openid', 'given_name', 'family_name', 'preferred_username', 'email'),
+    'SCOPES': ('openid'),
     'CLIENT_ID': None,
     'CLIENT_SECRET': None,
     'NONCE_LENGTH': 28,
