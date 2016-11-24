@@ -66,13 +66,12 @@ def _redirect(request, login_complete_view, issuer, redirect_field_name, login_d
         request.session.create()
 
     Nonce = import_from_str(oidc_settings.STATE_KEEPER)
+    state = None
     try:
         state = Nonce.generate(request, request.session.session_key, redirect_url, provider.issuer, 
             state_data=login_data)
     except errors.DataError:
         return HttpResponseBadRequest("Invalid data passed")
-    except Exception:
-        state = None
     if state is None:
         return HttpResponseServerError("Cannot create login state")
 
@@ -129,7 +128,8 @@ def login_complete(request, login_complete_view='oidc-complete',
                              data=params, verify=oidc_settings.VERIFY_SSL)
 
     if response.status_code != 200:
-        return HttpResponseForbidden('Invalid token')
+        log.debug('Token request failed %d' % response.status_code)
+        return HttpResponseServerError('Token request failed')
 
     log.debug('Token exchange done, proceeding authentication')
     credentials = response.json()
@@ -137,7 +137,12 @@ def login_complete(request, login_complete_view='oidc-complete',
     extra = {'session_key': request.session.session_key}
     if nonce.state_data is not None:
         extra['login_data'] = nonce.state_data
-    user = authenticate(credentials=credentials, **extra)
+
+    user = None
+    try:
+        user = authenticate(credentials=credentials, **extra)
+    except errors.OpenIDConnectError:
+        return HttpResponseServerError('Login processing failed')
     if user is None:
         return HttpResponseForbidden('Invalid user credentials')
 

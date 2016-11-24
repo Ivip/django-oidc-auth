@@ -20,12 +20,12 @@ class TokenValidationError(OpenIDConnectError, ValueError):
         super(TokenValidationError, self).__init__(message)
 
 
-class UnsuppportedSigningMethod(OpenIDConnectError, ValueError):
+class UnsupportedSigningMethod(OpenIDConnectError, ValueError):
     def __init__(self, unsupported_method, supported_methods):
         message = 'Signing method %s not supported, options are (%s)' % (
                 unsupported_method, ', '.join(supported_methods))
 
-        super(UnsuppportedSigningMethod, self).__init__(message)
+        super(UnsupportedSigningMethod, self).__init__(message)
 
 
 class RequestError(OpenIDConnectError):

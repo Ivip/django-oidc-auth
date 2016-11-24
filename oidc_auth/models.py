@@ -145,7 +145,7 @@ class OpenIDProvider(models.Model):
             raise errors.InvalidIdToken()
 
         if header['alg'] not in ['HS256', 'RS256']:
-            raise errors.UnsuppportedSigningMethod(header['alg'], ['HS256', 'RS256'])
+            raise errors.UnsupportedSigningMethod(header['alg'], ['HS256', 'RS256'])
 
         id_token = JWS().verify_compact(token, self.signing_keys)
         log.debug('Token verified, %s' % id_token)

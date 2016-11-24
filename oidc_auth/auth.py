@@ -42,6 +42,8 @@ class OpenIDConnectBackend(object):
                     credentials['login_data'] = kwargs['login_data']
                 return manager.get_user_by_token(credentials, access)
             return None
+        except (errors.InvalidIdToken, errors.TokenValidationError, errors.UnsupportedSigningMethod):
+            raise
         except Exception as e:
             log.error('Unexpected %s on authentication: %s', e.__class__.__name__, e)
             raise
