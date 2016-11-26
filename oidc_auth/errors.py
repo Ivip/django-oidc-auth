@@ -12,19 +12,19 @@ class OpenIDConnectError(RuntimeError):
 
 
 class InvalidIdToken(OpenIDConnectError, ValueError):
-    code = 403
+    code = 401
     message = 'id_token MUST be signed'
 
 
 class TokenValidationError(OpenIDConnectError, ValueError):
-    code = 403
+    code = 401
     def __init__(self, name):
         message = 'Token validation %s failed' % name
         super(TokenValidationError, self).__init__(message)
 
 
 class UnsupportedSigningMethod(OpenIDConnectError, ValueError):
-    code = 403
+    code = 500
     def __init__(self, unsupported_method, supported_methods):
         message = 'Signing method %s not supported, options are (%s)' % (
                 unsupported_method, ', '.join(supported_methods))
@@ -40,12 +40,12 @@ class RequestError(OpenIDConnectError):
 
 
 class InvalidUserInfo(OpenIDConnectError):
-    code = 403
+    code = 401
     message = 'The received sub does not match the value found in the ID token'
 
 
 class ForbiddenAuthRequest(OpenIDConnectError):
-    code = 403
+    code = 401
     message = 'querystring state differs from state saved on session'
 
 
