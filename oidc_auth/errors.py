@@ -2,6 +2,7 @@ from .utils import log
 
 
 class OpenIDConnectError(RuntimeError):
+    code = 500
     def __init__(self, message=None):
         if not message:
             message = getattr(self, 'message', '')
@@ -11,16 +12,19 @@ class OpenIDConnectError(RuntimeError):
 
 
 class InvalidIdToken(OpenIDConnectError, ValueError):
+    code = 403
     message = 'id_token MUST be signed'
 
 
 class TokenValidationError(OpenIDConnectError, ValueError):
+    code = 403
     def __init__(self, name):
         message = 'Token validation %s failed' % name
         super(TokenValidationError, self).__init__(message)
 
 
 class UnsupportedSigningMethod(OpenIDConnectError, ValueError):
+    code = 403
     def __init__(self, unsupported_method, supported_methods):
         message = 'Signing method %s not supported, options are (%s)' % (
                 unsupported_method, ', '.join(supported_methods))
@@ -29,22 +33,27 @@ class UnsupportedSigningMethod(OpenIDConnectError, ValueError):
 
 
 class RequestError(OpenIDConnectError):
+    code = 500
     def __init__(self, url, status_code):
         message = 'GET %s returned %s status code (200 expected)' % (url, status_code)
         super(RequestError, self).__init__(message)
 
 
 class InvalidUserInfo(OpenIDConnectError):
+    code = 403
     message = 'The received sub does not match the value found in the ID token'
 
 
 class ForbiddenAuthRequest(OpenIDConnectError):
+    code = 403
     message = 'querystring state differs from state saved on session'
 
 
 class InvalidIssuer(OpenIDConnectError):
+    code = 400
     message = "Missing or invalid OIDC provider URL"
 
 
 class DataError(OpenIDConnectError, ValueError):
+    code = 400
     message = "Invalid data passed"

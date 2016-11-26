@@ -1,18 +1,16 @@
-from urllib import urlencode
 from django.conf import settings
-from django.http import HttpResponseBadRequest, HttpResponse, HttpResponseNotAllowed, HttpResponseForbidden,\
+from django.http import HttpResponseBadRequest, HttpResponseNotAllowed, HttpResponseForbidden,\
     HttpResponseServerError
-from django.contrib.auth import REDIRECT_FIELD_NAME, authenticate, login as django_login
+from django.contrib.auth import REDIRECT_FIELD_NAME
 from django.core.urlresolvers import reverse
 from django.shortcuts import render, redirect
-import requests
 
-from . import errors
-from . import utils
-from .utils import log, import_from_str
+from .errors import *
+from .utils import log
 from .settings import oidc_settings
 from .forms import OpenIDConnectForm
 from .models import OpenIDProvider, get_default_provider
+from .auth import OpenIDConnectAuth
 
 
 def login_begin(request, template_name='oidc/login.html',
@@ -27,66 +25,35 @@ def login_begin(request, template_name='oidc/login.html',
             if form.is_valid():
                 issuer = form.cleaned_data['iss']
 
-        return _redirect(request, login_complete_view, issuer, redirect_field_name, None)
+        return _redirect(request, login_complete_view, issuer, redirect_field_name)
 
     log.debug('Rendering login template at %s' % template_name)
     return render(request, template_name)
 
 
-def login_initiate(request, 
-        login_complete_view='oidc-complete', 
-        issuer=None,
-        redirect_field_name=REDIRECT_FIELD_NAME,
-        login_data=None):
-
-    if oidc_settings.DISABLE_OIDC:
-        return HttpResponse("OIDC is disabled", status=503)
-
-    return _redirect(request, login_complete_view, issuer, redirect_field_name, login_data)
-
-
-def _redirect(request, login_complete_view, issuer, redirect_field_name, login_data):
+def _redirect(request, login_complete_view, issuer, redirect_field_name):
     if request.method not in ['POST', 'GET']:
         return HttpResponseNotAllowed(['POST', 'GET'])
 
-    if issuer:
+    auth = OpenIDConnectAuth(request)
+
+    if not issuer:
+        provider = get_default_provider()
+    else:
         try:
             provider = OpenIDProvider.discover(issuer=issuer)
-        except errors.InvalidIssuer:
+        except InvalidIssuer:
             provider = None
-    else:
-        provider = get_default_provider()
-
     if not provider:
         return HttpResponseBadRequest('Invalid issuer')
 
-    redirect_url = request.GET.get(redirect_field_name, settings.LOGIN_REDIRECT_URL)
+    login_data = request.GET.get(redirect_field_name, settings.LOGIN_REDIRECT_URL)
 
-    if not request.session.exists(request.session.session_key):
-        request.session.create()
+    complete_url = oidc_settings.COMPLETE_URL
+    if complete_url is None:
+        complete_url = reverse(login_complete_view)
 
-    Nonce = import_from_str(oidc_settings.STATE_KEEPER)
-    state = None
-    try:
-        state = Nonce.generate(request, request.session.session_key, redirect_url, provider.issuer, 
-            state_data=login_data)
-    except errors.DataError:
-        return HttpResponseBadRequest("Invalid data passed")
-    if state is None:
-        return HttpResponseServerError("Cannot create login state")
-
-    redirect_url = oidc_settings.COMPLETE_URL
-    if redirect_url is None:
-        redirect_url = reverse(login_complete_view)
-
-    params = urlencode({
-        'response_type': 'code',
-        'scope': utils.scopes(),
-        'redirect_uri': request.build_absolute_uri(redirect_url),
-        'client_id': provider.client_id,
-        'state': state
-    })
-    redirect_url = '%s?%s' % (provider.authorization_endpoint, params)
+    redirect_url = auth.login_init(provider, login_data, oidc_settings.SCOPES, complete_url)
 
     log.debug('Redirecting to %s' % redirect_url)
     return redirect(redirect_url)
@@ -100,59 +67,18 @@ def login_complete(request, login_complete_view='oidc-complete',
             'error': request.GET['error']
         })
 
-    if 'code' not in request.GET and 'state' not in request.GET:
-        return HttpResponseBadRequest('Invalid request')
-
-    state = request.GET['state']
-
-    Nonce = import_from_str(oidc_settings.STATE_KEEPER)
-    nonce = Nonce.validate(request, request.session.session_key, state)
-    if nonce is None:
-        return HttpResponseBadRequest('Invalid state')
-
-    provider = OpenIDProvider.objects.get(issuer=nonce.issuer_url)
-    log.debug('Login started from provider %s' % provider)
-
-    redirect_url = oidc_settings.COMPLETE_URL
-    if redirect_url is None:
-        redirect_url = reverse(login_complete_view)
-
-    params = {
-        'grant_type': 'authorization_code',
-        'code': request.GET['code'],
-        'redirect_uri': request.build_absolute_uri(redirect_url)
-    }
-
-    response = requests.post(provider.token_endpoint,
-                             auth=provider.client_credentials,
-                             data=params, verify=oidc_settings.VERIFY_SSL)
-
-    if response.status_code != 200:
-        log.debug('Token request failed %d' % response.status_code)
-        return HttpResponseServerError('Token request failed')
-
-    log.debug('Token exchange done, proceeding authentication')
-    credentials = response.json()
-    credentials['provider'] = provider
-    extra = {'session_key': request.session.session_key}
-    if nonce.state_data is not None:
-        extra['login_data'] = nonce.state_data
-
-    user = None
     try:
-        user = authenticate(credentials=credentials, **extra)
-    except errors.OpenIDConnectError:
-        return HttpResponseServerError('Login processing failed')
+        auth = OpenIDConnectAuth(request)
+        user = auth.user_login(auth.login_complete())
+    except (ForbiddenAuthRequest, InvalidUserInfo, TokenValidationError) as e:
+        return HttpResponseForbidden(e.message)
+    except OpenIDConnectError as e:
+        return HttpResponseServerError(e.message)
+
     if user is None:
         return HttpResponseForbidden('Invalid user credentials')
 
-    django_login(request, user)
-
-    if oidc_settings.LOGIN_COMPLETE:
-        hook = import_from_str(oidc_settings.LOGIN_COMPLETE)
-        return hook(request, state, nonce.redirect_url)
-
-    return redirect(nonce.redirect_url)
+    return redirect(auth.login_data)
 
 
 def _redirect_to_provider(request):

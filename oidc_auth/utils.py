@@ -3,11 +3,9 @@ from base64 import b64decode as python_b64decode
 import logging
 import importlib
 
-from .settings import oidc_settings
 
-
-def scopes():
-    _scopes = set(oidc_settings.SCOPES)
+def scopes(_scopes):
+    _scopes = set(_scopes)
     _scopes.update(['openid'])
     return ' '.join(_scopes)
 

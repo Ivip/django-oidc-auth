@@ -6,7 +6,7 @@ DEFAULTS = {
     'DISABLE_OIDC': False,
     'DISABLE_OIDC_DISCOVER': False,
     'DEFAULT_PROVIDER': {},
-    'SCOPES': ('openid'),
+    'SCOPES': (),
     'CLIENT_ID': None,
     'CLIENT_SECRET': None,
     'NONCE_LENGTH': 28,
@@ -14,7 +14,6 @@ DEFAULTS = {
     'COMPLETE_URL': None,
     'USER_MANAGER': None,
     'STATE_KEEPER': '.models.Nonce',
-    'LOGIN_COMPLETE': None,
 }
 
 USER_SETTINGS = getattr(settings, 'OIDC_AUTH', {})

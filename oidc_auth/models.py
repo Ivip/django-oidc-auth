@@ -14,7 +14,7 @@ from .utils import log, b64decode
 
 
 class Nonce(models.Model):
-    issuer_url = models.URLField()
+    provider_id = models.IntegerField()
     state = models.CharField(max_length=255, unique=True)
     redirect_url = models.CharField(max_length=100)
     session_id = models.CharField(max_length=128)
@@ -34,11 +34,11 @@ class Nonce(models.Model):
         return ''.join(random.choice(CHARS) for n in range(length))
 
     @classmethod
-    def generate(cls, request, session_id, redirect_url, issuer_url, nonce=None, state_data=None):
+    def generate(cls, request, session_id, redirect_url, provider_id, nonce=None, state_data=None):
         """Generate and return state string for specified session"""
         state = nonce or cls.nonce()
         try:
-            obj = cls(issuer_url=issuer_url, state=state,
+            obj = cls(provider_id=provider_id, state=state,
                     session_id=session_id, redirect_url=redirect_url, state_data=state_data)
             """Validate size constraints because DB may silently trim values"""
             obj.clean_fields()
@@ -67,7 +67,7 @@ class OpenIDProvider(models.Model):
         (HS256, 'HS256'),
     )
 
-    issuer = models.URLField(unique=True)
+    issuer = models.URLField()
     authorization_endpoint = models.URLField()
     token_endpoint = models.URLField()
     userinfo_endpoint = models.URLField()
@@ -77,8 +77,23 @@ class OpenIDProvider(models.Model):
     client_id = models.CharField(max_length=255)
     client_secret = models.CharField(max_length=255)
 
+    class Meta:
+        unique_together = (('issuer', 'client_id'), )
+
     def __unicode__(self):
-        return self.issuer
+        return "".join(["iss: ", self.issuer, ", client: ", self.client_id])
+
+    @classmethod
+    def find(cls, **kwargs):
+        try:
+            keymap = {'id': 'id', 'issuer': 'issuer', 'client': 'client_id'}
+            flt = {keymap[k]: v for k,v in kwargs.items()}
+            provider = cls.objects.get(**flt)
+            return provider
+        except cls.DoesNotExist:
+            raise errors.InvalidIssuer("Provider is not found")
+        except cls.MultipleObjectsReturned:
+            raise errors.InvalidIssuer("Provider is not specified")
 
     @classmethod
     def discover(cls, issuer='', credentials={}, save=True):
@@ -97,6 +112,8 @@ class OpenIDProvider(models.Model):
             return provider
         except cls.DoesNotExist:
             pass
+        except cls.MultipleObjectsReturned:
+            raise errors.InvalidIssuer("Client is not specified")
 
         if oidc_settings.DISABLE_OIDC_DISCOVER:
             raise errors.InvalidIssuer()
