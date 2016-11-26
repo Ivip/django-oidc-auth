@@ -187,6 +187,7 @@ class OpenIDConnectAuth(object):
         if user is None:
             return None
 
-        login(self.request, user)
+        if user.is_authenticated():
+            login(self.request, user)
 
         return user
