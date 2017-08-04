@@ -34,14 +34,20 @@ class OpenIDConnectBackend(object):
             if not credentials or not provider:
                 return None
 
-            id_token = provider.verify_id_token(credentials['id_token'])
-            if id_token['iss'] != provider.issuer:
-                log.error('ISS validation %s != %s', id_token['iss'], provider.issuer)
-                raise TokenValidationError('id_token.iss')
+            if 'id_token' in credentials:
+                #By code path
+                id_token = provider.verify_id_token(credentials['id_token'])
+                if id_token['iss'] != provider.issuer:
+                    log.error('ISS validation %s != %s', id_token['iss'], provider.issuer)
+                    raise TokenValidationError('id_token.iss')
+            else:
+                #Client path
+                id_token = None
 
             manager = self._get_user_manager()
             if manager:
-                credentials['id_token'] = id_token
+                if id_token is not None:
+                    credentials['id_token'] = id_token
                 return manager.get_user_by_token(token=credentials, provider=provider, 
                                                     login_data=kwargs.get('login_data'))
             else:
@@ -71,28 +77,37 @@ class OpenIDConnectAuth(object):
 
     @staticmethod
     def get_userinfo(token, provider):
-        id_token = token['id_token']
+        id_token = token.get('id_token')
         access_token = token['access_token']
 
-        if not provider or provider.issuer != id_token['iss']:
-            if provider:
-                log.error('Wrong provider: %s != %s', provider.issuer, id_token['iss'])
-            provider = OpenIDProvider.find(issuer=id_token['iss'])
+        if id_token is not None:
+            if not provider or provider.issuer != id_token['iss']:
+                if provider:
+                    log.error('Wrong provider: %s != %s', provider.issuer, id_token['iss'])
+                provider = OpenIDProvider.find(issuer=id_token['iss'])
 
-        sub = id_token['sub']
-        log.debug('Requesting userinfo from %s, cli: %s, sub: %s' % (
-            provider.userinfo_endpoint, provider.client_id, sub))
+            sub = id_token['sub']
+            log.debug('Requesting userinfo from %s, cli: %s, sub: %s' % (
+                provider.userinfo_endpoint, provider.client_id, sub))
+        else:
+            if not provider:
+                raise InvalidIssuer()
+            sub = None
+            log.debug('Requesting userinfo from %s, cli: %s' % (
+                provider.userinfo_endpoint, provider.client_id))
 
         response = requests.get(provider.userinfo_endpoint, headers={
             'Authorization': 'Bearer %s' % access_token
         }, verify=oidc_settings.VERIFY_SSL)
 
-        if response.status_code != 200:
+        if response.status_code == 401:
+            raise TokenValidationError('access_token')
+        elif response.status_code != 200:
             raise RequestError(provider.userinfo_endpoint, response.status_code)
 
         claims = response.json()
 
-        if claims['sub'] != sub:
+        if sub is not None and claims['sub'] != sub:
             raise InvalidUserInfo()
 
         return claims
